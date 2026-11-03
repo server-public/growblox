@@ -1,17 +1,16 @@
--- Delta Executor | Noclip + Touch Auto Collect
+-- Delta Executor | Auto Punch & Noclip World Lock
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local ITEM_NAME = "World Lock" 
 local running = true
 local noclipEnabled = true
 
--- ==========================================
--- UI PANEL
--- ==========================================
+-- UI Panel
 local oldGui = CoreGui:FindFirstChild("WorldLockUI")
 if oldGui then oldGui:Destroy() end
 
@@ -33,7 +32,7 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundTransparency = 1
-Title.Text = "Noclip Collect: " .. ITEM_NAME
+Title.Text = "Auto Punch: " .. ITEM_NAME
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -43,7 +42,7 @@ local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0.85, 0, 0, 30)
 ToggleBtn.Position = UDim2.new(0.075, 0, 0, 35)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 80)
-ToggleBtn.Text = "AUTO COLLECT: ON"
+ToggleBtn.Text = "AUTO PUNCH: ON"
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 12
@@ -61,19 +60,16 @@ NoclipBtn.TextSize = 12
 NoclipBtn.Parent = MainFrame
 Instance.new("UICorner", NoclipBtn).CornerRadius = UDim.new(0, 6)
 
--- Fungsi klik tombol (anti-drag)
 local function bindBtn(btn, callback)
     local dragging = false
     btn.MouseButton1Down:Connect(function() dragging = false end)
-    btn.MouseButton1Click:Connect(function()
-        if not dragging then callback() end
-    end)
+    btn.MouseButton1Click:Connect(function() if not dragging then callback() end end)
 end
 
 bindBtn(ToggleBtn, function()
     running = not running
     ToggleBtn.BackgroundColor3 = running and Color3.fromRGB(40, 180, 80) or Color3.fromRGB(180, 40, 40)
-    ToggleBtn.Text = running and "AUTO COLLECT: ON" or "AUTO COLLECT: OFF"
+    ToggleBtn.Text = running and "AUTO PUNCH: ON" or "AUTO PUNCH: OFF"
 end)
 
 bindBtn(NoclipBtn, function()
@@ -82,9 +78,7 @@ bindBtn(NoclipBtn, function()
     NoclipBtn.Text = noclipEnabled and "NOCLIP: ON" or "NOCLIP: OFF"
 end)
 
--- ==========================================
--- LOGIKA NOCLIP
--- ==========================================
+-- Noclip
 RunService.Stepped:Connect(function()
     if not noclipEnabled then return end
     local char = LocalPlayer.Character
@@ -97,9 +91,15 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- ==========================================
--- LOGIKA AUTO COLLECT
--- ==========================================
+-- Paksa Klik Kiri (Simulasi Pukulan)
+local function forcePunch()
+    pcall(function()
+        VirtualUser:Button1Down(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
+        task.wait(0.05)
+        VirtualUser:Button1Up(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
+    end)
+end
+
 local function processObject(obj)
     if not obj or not obj:IsA("BasePart") then return end
     local char = LocalPlayer.Character
@@ -107,12 +107,12 @@ local function processObject(obj)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- Visualizer: Bikin bola biru transparan di posisi item
+    -- Visualizer
     if not obj:FindFirstChild("WL_Visualizer") then
         local vis = Instance.new("Part")
         vis.Name = "WL_Visualizer"
         vis.Shape = Enum.PartType.Ball
-        vis.Size = Vector3.new(2, 2, 2)
+        vis.Size = Vector3.new(3, 3, 3)
         vis.Color = Color3.fromRGB(0, 255, 255)
         vis.Material = Enum.Material.Neon
         vis.CanCollide = false
@@ -122,21 +122,24 @@ local function processObject(obj)
         vis.Parent = obj
     end
 
-    -- Teleport instan ke posisi item (tembus dinding karena noclip)
-    hrp.CFrame = obj.CFrame
-
-    -- Maksa sentuhan bolak-balik
-    pcall(function()
-        firetouchinterest(hrp, obj, 0)
+    -- Teleport menghadap ke block
+    if (hrp.Position - obj.Position).Magnitude > 5 then
+        hrp.CFrame = obj.CFrame * CFrame.new(0, 0, -3) -- Berdiri 3 stud di depan block
         task.wait(0.1)
-        firetouchinterest(hrp, obj, 1)
-    end)
+    end
+
+    -- Arahkan kamera ke block (wajib biar pukulan kena)
+    local camera = Workspace.CurrentCamera
+    camera.CFrame = CFrame.new(hrp.Position, obj.Position)
+
+    -- Pukul terus menerus
+    forcePunch()
     
-    -- Coba pencet ClickDetector / ProximityPrompt kalau ada
-    local cd = obj:FindFirstChildOfClass("ClickDetector") or obj.Parent:FindFirstChildOfClass("ClickDetector")
+    -- Fallback kalau game pakai ClickDetector atau ProximityPrompt
+    local cd = obj:FindFirstChildOfClass("ClickDetector")
     if cd then pcall(function() fireclickdetector(cd) end) end
     
-    local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj.Parent:FindFirstChildOfClass("ProximityPrompt")
+    local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
     if prompt then pcall(function() fireproximityprompt(prompt) end) end
 end
 
@@ -151,7 +154,6 @@ local function scanLoop()
             if obj:IsA("BasePart") and obj.Name == ITEM_NAME then
                 if not obj:IsDescendantOf(char) then
                     processObject(obj)
-                    task.wait(0.15) -- Jeda antar collect
                     break 
                 end
             end
